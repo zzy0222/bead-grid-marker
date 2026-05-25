@@ -1,6 +1,7 @@
 .venv/
 build/
 dist/
+social/
 *.spec
 __pycache__/
 *.pyc

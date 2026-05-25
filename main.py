@@ -189,6 +189,117 @@ def dedupe_indexed_peaks(
     return indices, deduped_coords
 
 
+def weak_line_threshold(projection: np.ndarray) -> float:
+    nonzero = projection[projection > 0]
+    if nonzero.size == 0:
+        return 60.0
+    return max(60.0, float(np.percentile(projection, 90)) * 0.5)
+
+
+def snap_to_weak_line(
+    projection: np.ndarray,
+    center: float,
+    radius: int,
+    threshold: float,
+) -> int | None:
+    if center < 0 or center >= projection.size:
+        return None
+    start = max(0, int(round(center)) - radius)
+    end = min(projection.size, int(round(center)) + radius + 1)
+    if start >= end:
+        return None
+    window = projection[start:end]
+    peak_offset = int(np.argmax(window))
+    peak_value = float(window[peak_offset])
+    if peak_value < threshold:
+        return None
+    return start + peak_offset
+
+
+def extend_axis_grid(
+    axis: AxisGrid,
+    weak_projection: np.ndarray,
+    extend_start: bool = True,
+    extend_end: bool = True,
+) -> AxisGrid:
+    lines = list(axis.lines)
+    cell = abs(axis.cell_size)
+    radius = max(2, int(round(cell * 0.22)))
+    threshold = weak_line_threshold(weak_projection)
+
+    if extend_start:
+        pending: list[int] = []
+        misses = 0
+        while lines:
+            target = lines[0] - cell * (len(pending) + 1)
+            if target < 0:
+                break
+            candidate = snap_to_weak_line(weak_projection, target, radius, threshold)
+            if candidate is None or candidate >= lines[0] - cell * 0.35:
+                misses += 1
+                pending.insert(0, int(round(target)))
+                if misses > 1:
+                    break
+                continue
+            lines = [candidate] + pending + lines
+            pending = []
+            misses = 0
+
+    if extend_end:
+        pending = []
+        misses = 0
+        while lines:
+            target = lines[-1] + cell * (len(pending) + 1)
+            if target >= weak_projection.size:
+                break
+            candidate = snap_to_weak_line(weak_projection, target, radius, threshold)
+            if candidate is None or candidate <= lines[-1] + cell * 0.35:
+                misses += 1
+                pending.append(int(round(target)))
+                if misses > 1:
+                    break
+                continue
+            lines = lines + pending + [candidate]
+            pending = []
+            misses = 0
+
+    deduped: list[int] = []
+    for line in lines:
+        if not deduped or abs(line - deduped[-1]) > cell * 0.35:
+            deduped.append(int(line))
+    return AxisGrid(lines=deduped, cell_size=axis.cell_size)
+
+
+def trim_trailing_sparse_tail(indices: list[int], coords: list[int]) -> tuple[list[int], list[int]]:
+    if len(indices) < 8:
+        return indices, coords
+
+    gaps = [right - left for left, right in zip(indices, indices[1:])]
+    sparse_count = 0
+    pos = len(gaps) - 1
+    while pos >= 0 and gaps[pos] > 1:
+        sparse_count += 1
+        pos -= 1
+
+    if sparse_count < 2:
+        return indices, coords
+
+    dense_before = 0
+    for gap in reversed(gaps[: pos + 1]):
+        if gap == 1:
+            dense_before += 1
+        else:
+            break
+
+    if dense_before < 2:
+        return indices, coords
+
+    # Keep the first sparse step after a dense cluster: it is often the real
+    # outer grid boundary, while following sparse steps tend to be legends.
+    keep = min(len(indices), pos + 3)
+    return indices[:keep], coords[:keep]
+
+
 def fit_axis_grid(peaks: list[tuple[int, float]], axis_name: str) -> AxisGrid:
     cell_size = refine_cell_size(peaks, estimate_cell_size(peaks))
     run = trim_isolated_edge_peaks(phase_aligned_run(peaks, cell_size), cell_size)
@@ -200,6 +311,7 @@ def fit_axis_grid(peaks: list[tuple[int, float]], axis_name: str) -> AxisGrid:
     coords = [coord for coord, _ in run]
     weights = [weight for _, weight in run]
     indices, coords = dedupe_indexed_peaks(coords, weights, cell_size)
+    indices, coords = trim_trailing_sparse_tail(indices, coords)
 
     fit = np.polyfit(np.array(indices, dtype=np.float64), np.array(coords, dtype=np.float64), 1)
     fitted_cell = float(fit[0])
@@ -246,6 +358,23 @@ def detect_grid(image: np.ndarray, manual_rect: tuple[int, int, int, int] | None
     y_peaks = projection_peaks(y_projection)
     x_grid = fit_axis_grid(x_peaks, "横向")
     y_grid = fit_axis_grid(y_peaks, "纵向")
+
+    weak_edges = cv2.Canny(gray, 35, 110, L2gradient=True)
+    weak_kernel_len = max(8, int(round(kernel_len * 0.7)))
+    weak_vertical = cv2.morphologyEx(
+        weak_edges,
+        cv2.MORPH_OPEN,
+        cv2.getStructuringElement(cv2.MORPH_RECT, (1, weak_kernel_len)),
+    )
+    weak_horizontal = cv2.morphologyEx(
+        weak_edges,
+        cv2.MORPH_OPEN,
+        cv2.getStructuringElement(cv2.MORPH_RECT, (weak_kernel_len, 1)),
+    )
+    weak_x_projection = np.sum(weak_vertical > 0, axis=0).astype(np.float64)
+    weak_y_projection = np.sum(weak_horizontal > 0, axis=1).astype(np.float64)
+    x_grid = extend_axis_grid(x_grid, weak_x_projection, extend_start=True, extend_end=True)
+    y_grid = extend_axis_grid(y_grid, weak_y_projection, extend_start=True, extend_end=False)
 
     x_lines = [x + offset_x for x in x_grid.lines]
     y_lines = [y + offset_y for y in y_grid.lines]
