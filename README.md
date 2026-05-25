@@ -6,9 +6,13 @@
 
 ## 怎么使用
 
-下载并双击打开 `bead_grid_marker.exe`，选择你的拼豆图纸图片即可。
+到 GitHub Release 下载最新的 Windows 版 `bead-grid-marker-...-windows-x86_64.exe`：
 
-也可以直接把图片拖到 `bead_grid_marker.exe` 上，工具会自动处理。
+https://github.com/zzy0222/bead-grid-marker/releases/latest
+
+下载后双击打开 exe，选择你的拼豆图纸图片即可。
+
+也可以直接把图片拖到 exe 上，工具会自动处理。
 
 支持常见的 JPG、JPEG、PNG 图片。
 
