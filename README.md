@@ -6,13 +6,18 @@
 
 ## 怎么使用
 
-到 GitHub Release 下载最新的 Windows 版 `bead-grid-marker-...-windows-x86_64.exe`：
+到 GitHub Release 下载最新版本：
 
 https://github.com/zzy0222/bead-grid-marker/releases/latest
 
-下载后双击打开 exe，选择你的拼豆图纸图片即可。
+- Windows：下载 `bead-grid-marker-...-windows-x86_64.exe`
+- macOS（Apple 芯片）：下载 `bead-grid-marker-...-macos-apple-silicon.dmg`
 
-也可以直接把图片拖到 exe 上，工具会自动处理。
+Windows 下载后双击打开 exe，选择你的拼豆图纸图片即可。
+
+macOS 下载后打开 dmg，把 `Bead Grid Marker` 拖到 Applications 里，再从 Applications 打开。
+
+Windows 也可以直接把图片拖到 exe 上，工具会自动处理。
 
 支持常见的 JPG、JPEG、PNG 图片。
 
@@ -56,4 +61,10 @@ python -m venv .venv
 
 ```powershell
 .\.venv\Scripts\pyinstaller --onefile --noconsole --icon assets\bead_grid_marker.ico --name bead_grid_marker main.py
+```
+
+macOS dmg 由 GitHub Actions 在 macOS runner 上构建：
+
+```bash
+scripts/build_macos_dmg.sh v0.1.1
 ```

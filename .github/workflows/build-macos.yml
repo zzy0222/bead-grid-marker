@@ -1,0 +1,42 @@
+name: Build macOS DMG
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to attach the DMG to"
+        required: true
+        default: "v0.1.1"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build macOS Apple Silicon DMG
+    runs-on: macos-14
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Build DMG
+        run: |
+          chmod +x scripts/build_macos_dmg.sh
+          scripts/build_macos_dmg.sh "${{ inputs.tag }}"
+
+      - name: Upload release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "${{ inputs.tag }}" dist/bead-grid-marker-${{ inputs.tag }}-macos-apple-silicon.dmg --clobber
